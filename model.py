@@ -5,7 +5,7 @@ Parameters based primarily off Tanzania
 @author: Matt Martinez
 '''
 
-from scipy.integrate import odeint
+from scipy.integrate import solve_ivp  # Prefer this over odeint because can use Runge-Kutta 4th order of integrating
 import numpy as np
 import math
 import matplotlib.pyplot as plt
@@ -30,8 +30,7 @@ class Human:
     I: int | np.ndarray
     R: int | np.ndarray
 
-    H_total: int                # Total number of humans
-    PREV: float                 # Prevalence of infection
+    PREV = []                 # Prevalence of infection
         
     # Differential equations
     dS: float
@@ -40,10 +39,12 @@ class Human:
     dR: float
 
     # Initial population parameters
-    S_0: int       = 59_599_999   # Susceptible
+    Total: int = 59_600_000              # Total number of humans
+    S_0: int       = 59_599_999 #/ Total   # Susceptible
     E_0: int       = 0            # Exposed
-    I_0: int       = 1            # Infected
+    I_0: int       = 1 #- S_0           # Infected
     R_0: int       = 0            # Recovered
+    
 
     # Transmission parameters
     MU: float       = 0.0003    # Death/birth rate per host per week (avg lifespan = 64.48 year)
@@ -65,8 +66,8 @@ class Mosquito:
     E: int | np.ndarray
     I: int | np.ndarray
 
-    M_total: int                # Total number of mosquitos
-    PREV: float                     # Prevalence of infection
+    
+    PREV = []                     # Prevalence of infection
 
     # Differential equations
     dS: float
@@ -74,9 +75,10 @@ class Mosquito:
     dI: float
 
     # Initial population parameters
-    S_0: int          = 119_199_999   # Susceptible
+    Total: int = 119_200_000                # Total number of mosquitos
+    S_0: int          = 119_199_999 #/ Total  # Susceptible
     E_0: int          = 0             # Exposed
-    I_0: int          = 1             # Infected
+    I_0: int          = 1 #- S_0             # Infected
 
     # Transmission parameters
     a: int          = 70    # Bite rate (bites per mosquito per week) - from 10/day
@@ -85,7 +87,7 @@ class Mosquito:
     EPSILON: float  = 7/9   # Rate of becoming infectious / host / week given an average incubation period of 9 days
 
 
-def f(y: list, t: float) -> list:
+def f(t: float, y: list) -> list:
     ''' 
     ODE function for SEIR model
     Args:
@@ -98,29 +100,17 @@ def f(y: list, t: float) -> list:
 
     # Set human and mosquito parameters
     Human.S, Human.E, Human.I, Human.R = y[0:4]
-    Human.H_total = Human.S + Human.E + Human.I + Human.R
-    Human.PREV = ((Human.I + Human.E) / Human.H_total) * 100
-
     Mosquito.S, Mosquito.E, Mosquito.I = y[4:]
-    Mosquito.M_total = Mosquito.S + Mosquito.E + Mosquito.I
-    Mosquito.PREV = ((Mosquito.I + Mosquito.E) / Mosquito.M_total) * 100
 
     # Define forces of infection below dataclass since they rely on each other
-    Human.LAMBDA = ( (Mosquito.a * Mosquito.M_total / Human.H_total)  # Force of infection in Human
-                        * (Mosquito.I / Mosquito.M_total)
+    Human.LAMBDA = ( (Mosquito.a * Mosquito.Total / Human.Total)  # Force of infection in Human
+                        * (Mosquito.I / Mosquito.Total)
                         * Human.PI)
 
-    Mosquito.LAMBDA = (Mosquito.a * (Human.I / Human.H_total) * Mosquito.PI)      # Force of infection in Mosquito
-
-    # Define the basic reproductive ratio, R0
-    R0 = math.sqrt(((Mosquito.EPSILON / (Mosquito.EPSILON + Mosquito.MU)) 
-                    * (Mosquito.a * Human.PI) * (1 / Mosquito.MU)) 
-                    * ((Human.EPSILON / (Human.EPSILON + Human.MU)) 
-                    * ((Mosquito.a * Mosquito.PI * Mosquito.M_total) / Human.H_total) 
-                    * (1 / (Human.MU + Human.DELTA))))
+    Mosquito.LAMBDA = (Mosquito.a * (Human.I / Human.Total) * Mosquito.PI)  # Force of infection in Mosquito
 
     # Differential equations
-    Human.dS = ((Human.MU * Human.H_total)
+    Human.dS = ((Human.MU * Human.Total)
                 + (Human.CFR * Human.DELTA * Human.I)
                 + (Human.SIGMA * Human.R)
                 - (Human.LAMBDA * Human.S)
@@ -139,7 +129,7 @@ def f(y: list, t: float) -> list:
                 - (Human.MU * Human.R))
     
 
-    Mosquito.dS = ((Mosquito.MU * Mosquito.M_total)
+    Mosquito.dS = ((Mosquito.MU * Mosquito.Total)
                    - (Mosquito.LAMBDA * Mosquito.S)
                    - (Mosquito.MU * Mosquito.S))
     
@@ -150,39 +140,90 @@ def f(y: list, t: float) -> list:
     Mosquito.dI = ((Mosquito.EPSILON * Mosquito.E)
                    - (Mosquito.MU * Mosquito.I))
 
-    return [Human.dS, Human.dE, Human.dI, Human.dR, Mosquito.dS, Mosquito.dE, Mosquito.dI]
+    return [Human.dS, Human.dE, Human.dI, Human.dR, 
+            Mosquito.dS, Mosquito.dE, Mosquito.dI]
+
+def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj) -> np.array:
+    ''' 
+    Function for SEIR model to solve prevalence parameter
+    Will do it for the time points that were solved by the ODE algorithm,
+    since the ODE solver outputs the solution at the time points and not
+    for every iteration
+
+    Args:
+        t [np.array]: times from ODE solution
+        e: [np.array]: Exposed, from ODE solution
+        i: [np.array]: Infected, from ODE solution
+        Obj: dataclass with prevalence: Dataclass object
+        
+    Returns:
+        None, appends Object.PREV with prev and set as np.array
+    '''
+
+    for k in range(t.size):
+        Obj.PREV.append((i[k] + e[k]))
+
+    Obj.PREV = np.asarray(Obj.PREV)
+
 
 
 def main():
     '''
     Set the parameters, solve the ODE, and plot the results
     '''
-    t = np.linspace(start=START, stop=STOP, num=INTERVAL)  # Domain / time range
-    y0 = [Human.S_0, Human.E_0, Human.I_0, Human.R_0, Mosquito.S_0, Mosquito.E_0, Mosquito.I_0]  # Initial conditions
-    y = odeint(f, y0, t)  # Solve ODEs
+
+    # Initial conditions
+    y0 = [Human.S_0, Human.E_0, Human.I_0, Human.R_0, Mosquito.S_0, Mosquito.E_0, Mosquito.I_0]
+
+    # Solve the ODE
+    y = solve_ivp(f, (START, STOP), y0)
+
+    # Define and solve for the basic reproductive ratio, R0
+    R0 = math.sqrt(((Mosquito.EPSILON / (Mosquito.EPSILON + Mosquito.MU)) 
+                    * (Mosquito.a * Human.PI) * (1 / Mosquito.MU)) 
+                    * ((Human.EPSILON / (Human.EPSILON + Human.MU)) 
+                    * ((Mosquito.a * Mosquito.PI * Mosquito.Total) / Human.Total) 
+                    * (1 / (Human.MU + Human.DELTA))))
+    
+    print(f"R0: {R0}")
+    print(f"Number of prevalence points: {len(Human.PREV)}")
 
     # Set the human and mosquito parameters with the ODE results
-    Human.S = y[:, 0]
-    Human.E = y[:, 1]
-    Human.I = y[:, 2]
-    Human.R = y[:, 3]
-    Mosquito.S = y[:, 4]
-    Mosquito.E = y[:, 5]
-    Mosquito.I = y[:, 6]
+    t = y.t
+    Human.S = y.y[0, :]
+    Human.E = y.y[1, :]
+    Human.I = y.y[2, :]
+    Human.R = y.y[3, :]
+    Mosquito.S = y.y[4, :]
+    Mosquito.E = y.y[5, :]
+    Mosquito.I = y.y[6, :]
 
+    # Calculate the prevalence based on the ODE solution times
+    calc_prevalence(t, Human.E, Human.I, Human)
+    calc_prevalence(t, Mosquito.E, Mosquito.I, Mosquito)
+
+    # Debugging
+    print(f"Array size: {Human.S.shape}")
+    print(f"Number of time points: {t.size}")
+    print(f"Number of prevalence points: {Human.PREV.size}")
+    
     # Plot the results
+    # t_prev = np.linspace(start=START, stop=STOP, num=len(Human.PREV))
     plt.plot(t, Human.S, 'r', label='hS(T)')
     plt.plot(t, Human.I, 'b', label='hI(T)')
     plt.plot(t, Human.E, 'g', label='hE(T)')
     plt.plot(t, Human.R, 'k', label='hR(T)')
+    plt.plot(t, Human.PREV, 'm', label='Human Prev')
     plt.legend()
     plt.show()
 
     plt.plot(t, Mosquito.S, 'r', label='mS(T)')
     plt.plot(t, Mosquito.I, 'b', label='mI(T)')
     plt.plot(t, Mosquito.E, 'g', label='mE(T)')
+    plt.plot(t, Mosquito.PREV, 'm', label='Mosquito Prev')
     plt.legend()
     plt.show()
+    
 
 if __name__ == '__main__':
     main()
