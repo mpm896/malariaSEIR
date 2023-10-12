@@ -30,7 +30,7 @@ class Human:
     I: int | np.ndarray
     R: int | np.ndarray
 
-    PREV = []                 # Prevalence of infection
+    PREV = []                   # Prevalence of infection
         
     # Differential equations
     dS: float
@@ -39,11 +39,12 @@ class Human:
     dR: float
 
     # Initial population parameters
-    Total: int = 59_600_000              # Total number of humans
-    S_0: int       = 59_599_999 #/ Total   # Susceptible
-    E_0: int       = 0            # Exposed
-    I_0: int       = 1 #- S_0           # Infected
-    R_0: int       = 0            # Recovered
+    Total = 1                                       # Default, since this will be based on fractions of the population
+    TotalPop: int = 59_600_000.                     # Total number of humans
+    S_0: int | float       = 59_599_999. / TotalPop # Susceptible
+    E_0: int | float       = 0                      # Exposed
+    I_0: int | float       = 1 - S_0                # Infected
+    R_0: int | float       = 0                      # Recovered
     
 
     # Transmission parameters
@@ -67,7 +68,7 @@ class Mosquito:
     I: int | np.ndarray
 
     
-    PREV = []                     # Prevalence of infection
+    PREV = []                       # Prevalence of infection
 
     # Differential equations
     dS: float
@@ -75,10 +76,11 @@ class Mosquito:
     dI: float
 
     # Initial population parameters
-    Total: int = 119_200_000                # Total number of mosquitos
-    S_0: int          = 119_199_999 #/ Total  # Susceptible
-    E_0: int          = 0             # Exposed
-    I_0: int          = 1 #- S_0             # Infected
+    Total = 1                                           # Default, since this will be based on fractions of the population
+    TotalPop: int = 119_200_000.                        # Total number of mosquitos
+    S_0: int | float          = 119_199_999. / TotalPop # Susceptible
+    E_0: int | float          = 0                       # Exposed
+    I_0: int | float          = 1 - S_0                 # Infected
 
     # Transmission parameters
     a: int          = 70    # Bite rate (bites per mosquito per week) - from 10/day
@@ -143,19 +145,15 @@ def f(t: float, y: list) -> list:
     return [Human.dS, Human.dE, Human.dI, Human.dR, 
             Mosquito.dS, Mosquito.dE, Mosquito.dI]
 
-def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj) -> np.array:
+def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj):
     ''' 
     Function for SEIR model to solve prevalence parameter
-    Will do it for the time points that were solved by the ODE algorithm,
-    since the ODE solver outputs the solution at the time points and not
-    for every iteration
-
+    Will do it for the time points that were solved by the ODE algorithm
     Args:
         t [np.array]: times from ODE solution
         e: [np.array]: Exposed, from ODE solution
         i: [np.array]: Infected, from ODE solution
-        Obj: dataclass with prevalence: Dataclass object
-        
+        Obj: dataclass with prevalence: Dataclass object   
     Returns:
         None, appends Object.PREV with prev and set as np.array
     '''
@@ -165,12 +163,39 @@ def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj) -> np.array:
 
     Obj.PREV = np.asarray(Obj.PREV)
 
+def calc_incidence(t: np.array, e: np.array, i: np.array) -> np.array:
+    ''' 
+    Function for SEIR model to solve incidence parameter
+    Args:
+        t [np.array]: times from ODE solution
+        e: [np.array]: Exposed, from ODE solution
+        i: [np.array]: Infected, from ODE solution
+    Returns:
+        inc: np.array
+    '''
+    pass
+
+def makeplots(t: np.array, s: np.array, e: np.array = None, i: np.array = None, r: np.array = None) -> None:
+    ''' Plot the data '''
+
+    # Must contain at least SEI or SIR, in that order. Can also be SEIR.
+    plt.plot(t, s, lw=2, label='Susceptible')
+    if e is not None: plt.plot(t, e, lw=2, label='Exposed')
+    if i is not None: plt.plot(t, i, lw=2, label='Infected')
+    if r is not None: plt.plot(t, r, lw=2, label='Recovered')
+
+    plt.xlabel('Time /weeks')
+    plt.ylabel('Fraction of population')
+    plt.ylim(0, 1.05)
+    plt.title('Susceptible and Recovered Populations')
+    plt.grid()
+    plt.legend()
+    plt.show()
+
 
 
 def main():
-    '''
-    Set the parameters, solve the ODE, and plot the results
-    '''
+    ''' Set the parameters, solve the ODE, and plot the results '''
 
     # Initial conditions
     y0 = [Human.S_0, Human.E_0, Human.I_0, Human.R_0, Mosquito.S_0, Mosquito.E_0, Mosquito.I_0]
@@ -186,7 +211,6 @@ def main():
                     * (1 / (Human.MU + Human.DELTA))))
     
     print(f"R0: {R0}")
-    print(f"Number of prevalence points: {len(Human.PREV)}")
 
     # Set the human and mosquito parameters with the ODE results
     t = y.t
@@ -201,29 +225,31 @@ def main():
     # Calculate the prevalence based on the ODE solution times
     calc_prevalence(t, Human.E, Human.I, Human)
     calc_prevalence(t, Mosquito.E, Mosquito.I, Mosquito)
-
-    # Debugging
-    print(f"Array size: {Human.S.shape}")
-    print(f"Number of time points: {t.size}")
-    print(f"Number of prevalence points: {Human.PREV.size}")
     
     # Plot the results
-    # t_prev = np.linspace(start=START, stop=STOP, num=len(Human.PREV))
-    plt.plot(t, Human.S, 'r', label='hS(T)')
-    plt.plot(t, Human.I, 'b', label='hI(T)')
-    plt.plot(t, Human.E, 'g', label='hE(T)')
-    plt.plot(t, Human.R, 'k', label='hR(T)')
-    plt.plot(t, Human.PREV, 'm', label='Human Prev')
+    makeplots(t, Human.S, Human.E, Human.I, Human.R)
+    makeplots(t, Mosquito.S, Mosquito.E, Mosquito.I)
+
+    plt.plot(t, Human.E + Human.I, label='Human Prev')
+    plt.plot(t, Human.PREV, label='Human Prev')
+    plt.plot(t, Mosquito.PREV, label='Mosquito Prev')
     plt.legend()
     plt.show()
 
-    plt.plot(t, Mosquito.S, 'r', label='mS(T)')
-    plt.plot(t, Mosquito.I, 'b', label='mI(T)')
-    plt.plot(t, Mosquito.E, 'g', label='mE(T)')
-    plt.plot(t, Mosquito.PREV, 'm', label='Mosquito Prev')
+
+    plt.plot(Human.S, Human.I, lw=2, label='s, i trajectory')
+    plt.plot([1/R0, 1/R0], [0, 1], '--', lw=2, label='di/dt = 0')
+    plt.plot(Human.S[0], Human.I[0], '.', ms=20, label='Initial Condition')
+    plt.plot(Human.S[-1], Human.I[-1], '.', ms=20, label='Final Condition')
+    plt.title('State Trajectory')
+    plt.ylim(0, 1.05)
+    plt.xlim(0, 1.05)
+    plt.ylabel('Infectious')
+    plt.xlabel('Susceptible')
     plt.legend()
     plt.show()
-    
+
+
 
 if __name__ == '__main__':
     main()
