@@ -1,95 +1,90 @@
-''' 
-Malaria SEIR model for PHCP project
-Parameters based primarily off Tanzania
-
-@author: Matt Martinez
 '''
+Malaria SEIR mdoel for PHCP project
+Parameters based primarily off of Tanzania
 
-from scipy.integrate import solve_ivp  # Prefer this over odeint because can use Runge-Kutta 4th order of integrating
-import numpy as np
+@author: Matthew Martinez
+'''
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 import math
-import matplotlib.pyplot as plt
-from dataclasses import dataclass
+import matplotlib.pyplot as plt  # type: ignore
+import numpy as np
+from scipy.integrate import solve_ivp  # type: ignore # uses Runge-Kutta 4th order of integrating
+from typing import Optional
 
-### Global constants ###
-
-# Start, stop times and interval in WEEKS
+### Globals ###
 START = 0
 STOP = 400
-INTERVAL = 10_000
 
-@dataclass
-class Human:
-    ''' HUMAN CONDITIONS '''
+###################################################################
+########################### PARAMETERS ############################
+###################################################################
 
-    # Dynamic parameters
-    LAMBDA: float               # Force of infection
+PARAMETERS = {
+    "Human": {
+        "TotalPop": 59_600_000,
+        "MU": 0.0003,
+        "CFR": 0.0033,
+        "PI": 0.1,
+        "EPSILON": 7/12,
+        "DELTA": 0.024,
+        "SIGMA": 0.0038
+    },
 
-    S: int | np.ndarray
-    E: int | np.ndarray
-    I: int | np.ndarray
-    R: int | np.ndarray
-
-    PREV = []                   # Prevalence of infection
-        
-    # Differential equations
-    dS: float
-    dE: float
-    dI: float
-    dR: float
-
-    # Initial population parameters
-    Total = 1                                       # Default, since this will be based on fractions of the population
-    TotalPop: int = 59_600_000.                     # Total number of humans
-    S_0: int | float       = 59_599_999. / TotalPop # Susceptible
-    E_0: int | float       = 0                      # Exposed
-    I_0: int | float       = 1 - S_0                # Infected
-    R_0: int | float       = 0                      # Recovered
-    
-
-    # Transmission parameters
-    MU: float       = 0.0003    # Death/birth rate per host per week (avg lifespan = 64.48 year)
-    CFR: float      = 0.0033    # Case fatality ratio
-    PI: float       = 0.1       # Probability of infection in case of infectious bite
-    EPSILON: float  = 7/12      # Rate of becoming infectious / host / week given an average incubation period of 12 days
-    DELTA: float    = 0.024     # Rate of recovery given an average time spent infectious of ~40 weeks
-    SIGMA: float    = 0.0038    # Rate of loss of immunity per host per week (~260 weeks)
+    "Mosquito": {
+        "TotalPop": 119_200_000,
+        "a": 70,
+        "MU": 0.35,
+        "PI": 0.01,
+        "EPSILON": 7/9
+    }
+}
 
 
 @dataclass
-class Mosquito:
-    ''' MOSQUITO CONDITIONS '''
+class Agent:
+    ''' Default SEIR parameters '''
+
+    # Parameters to be set during ODE solution
+    S: Optional[np.ndarray] = None
+    E: Optional[np.ndarray] = None
+    I: Optional[np.ndarray] = None
+    R: Optional[np.ndarray] = None
+
+    dS: Optional[float] = None
+    dE: Optional[float] = None
+    dI: Optional[float] = None
+    dR: Optional[float] = None
+    LAMBDA: Optional[float] = None
+
+    # Parameters to be set during initialization
+    TotalPop: Optional[int]  = None
+    PREV: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    Total = 1
+
+    @classmethod
+    def from_kwargs(cls, **kwargs) -> Agent:
+        """ Set custom parameters from kwargs """
+        ret = cls(0, 0, 0, 0)
+
+        # Add kwargs to class
+        for k, v in kwargs.items():
+            setattr(ret, k, v)
     
-    # Dynamic parameters
-    LAMBDA: float                   # Force of infection
+        if "TotalPop" in kwargs and kwargs["TotalPop"] is not None:
+            cls.TotalPop: int = kwargs["TotalPop"]
+            cls.S_0        = (cls.TotalPop - 1) / cls.TotalPop
+        else:
+            cls.S_0          = 0
+        cls.E_0: float       = 0
+        cls.I_0: float       = 1 - cls.S_0
+        cls.R_0: float       = 0
 
-    S: int | np.ndarray
-    E: int | np.ndarray
-    I: int | np.ndarray
-
+        return ret
     
-    PREV = []                       # Prevalence of infection
 
-    # Differential equations
-    dS: float
-    dE: float
-    dI: float
-
-    # Initial population parameters
-    Total = 1                                           # Default, since this will be based on fractions of the population
-    TotalPop: int = 119_200_000.                        # Total number of mosquitos
-    S_0: int | float          = 119_199_999. / TotalPop # Susceptible
-    E_0: int | float          = 0                       # Exposed
-    I_0: int | float          = 1 - S_0                 # Infected
-
-    # Transmission parameters
-    a: int          = 70    # Bite rate (bites per mosquito per week) - from 10/day
-    MU: float       = 0.35  # Death/birth rate per mosquito per week (avg lifespan ~3 weeks)
-    PI: float       = 0.01  # Probability of infection in case of bite of infectious human
-    EPSILON: float  = 7/9   # Rate of becoming infectious / host / week given an average incubation period of 9 days
-
-
-def f(t: float, y: list) -> list:
+def f(t: float, y: list, *args) -> list:
     ''' 
     ODE function for SEIR model
     Args:
@@ -99,6 +94,8 @@ def f(t: float, y: list) -> list:
     Returns:
         dy/dt: list[dS/dt, dE/dt, dI/dt, dR/dt]
     '''
+    # Assign agents from args
+    Human, Mosquito = args 
 
     # Set human and mosquito parameters
     Human.S, Human.E, Human.I, Human.R = y[0:4]
@@ -145,7 +142,11 @@ def f(t: float, y: list) -> list:
     return [Human.dS, Human.dE, Human.dI, Human.dR, 
             Mosquito.dS, Mosquito.dE, Mosquito.dI]
 
-def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj):
+
+def calc_prevalence(t: np.ndarray, 
+                    e: np.ndarray, 
+                    i: np.ndarray, 
+                    Obj: Agent) -> None:
     ''' 
     Function for SEIR model to solve prevalence parameter
     Will do it for the time points that were solved by the ODE algorithm
@@ -157,32 +158,24 @@ def calc_prevalence(t: np.array, e: np.array, i: np.array, Obj):
     Returns:
         None, appends Object.PREV with prev and set as np.array
     '''
+    Obj.PREV = e + i
 
-    for k in range(t.size):
-        Obj.PREV.append((i[k] + e[k]))
 
-    Obj.PREV = np.asarray(Obj.PREV)
-
-def calc_incidence(t: np.array, e: np.array, i: np.array) -> np.array:
-    ''' 
-    Function for SEIR model to solve incidence parameter
-    Args:
-        t [np.array]: times from ODE solution
-        e: [np.array]: Exposed, from ODE solution
-        i: [np.array]: Infected, from ODE solution
-    Returns:
-        inc: np.array
-    '''
-    pass
-
-def makeplots(t: np.array, s: np.array, e: np.array = None, i: np.array = None, r: np.array = None) -> None:
+def makeplots(t: np.ndarray, 
+              s: np.ndarray, 
+              e: Optional[np.ndarray] = None, 
+              i: Optional[np.ndarray] = None, 
+              r: Optional[np.ndarray] = None) -> None:
     ''' Plot the data '''
 
-    # Must contain at least SEI or SIR, in that order. Can also be SEIR.
+    # Plot disease dynamics
     plt.plot(t, s, lw=2, label='Susceptible')
-    if e is not None: plt.plot(t, e, lw=2, label='Exposed')
-    if i is not None: plt.plot(t, i, lw=2, label='Infected')
-    if r is not None: plt.plot(t, r, lw=2, label='Recovered')
+    if e is not None: 
+        plt.plot(t, e, lw=2, label='Exposed')
+    if i is not None: 
+        plt.plot(t, i, lw=2, label='Infected')
+    if r is not None: 
+        plt.plot(t, r, lw=2, label='Recovered')
 
     plt.xlabel('Time /weeks')
     plt.ylabel('Fraction of population')
@@ -193,63 +186,54 @@ def makeplots(t: np.array, s: np.array, e: np.array = None, i: np.array = None, 
     plt.show()
 
 
-
+        
 def main():
     ''' Set the parameters, solve the ODE, and plot the results '''
+    human = Agent.from_kwargs(**PARAMETERS["Human"])
+    mosquito = Agent.from_kwargs(**PARAMETERS["Mosquito"])
 
     # Initial conditions
-    y0 = [Human.S_0, Human.E_0, Human.I_0, Human.R_0, Mosquito.S_0, Mosquito.E_0, Mosquito.I_0]
+    y0 = [human.S_0, human.E_0, human.I_0, human.R_0, mosquito.S_0, mosquito.E_0, mosquito.I_0]
 
     # Solve the ODE
-    y = solve_ivp(f, (START, STOP), y0)
+    y = solve_ivp(f, (START, STOP), y0, args=(human, mosquito))
 
     # Define and solve for the basic reproductive ratio, R0
-    R0 = math.sqrt(((Mosquito.EPSILON / (Mosquito.EPSILON + Mosquito.MU)) 
-                    * (Mosquito.a * Human.PI) * (1 / Mosquito.MU)) 
-                    * ((Human.EPSILON / (Human.EPSILON + Human.MU)) 
-                    * ((Mosquito.a * Mosquito.PI * Mosquito.Total) / Human.Total) 
-                    * (1 / (Human.MU + Human.DELTA))))
+    R0 = math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
+                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
+                    * ((human.EPSILON / (human.EPSILON + human.MU)) 
+                    * ((mosquito.a * mosquito.PI * mosquito.Total) / human.Total) 
+                    * (1 / (human.MU + human.DELTA))))
     
     print(f"R0: {R0}")
 
     # Set the human and mosquito parameters with the ODE results
     t = y.t
-    Human.S = y.y[0, :]
-    Human.E = y.y[1, :]
-    Human.I = y.y[2, :]
-    Human.R = y.y[3, :]
-    Mosquito.S = y.y[4, :]
-    Mosquito.E = y.y[5, :]
-    Mosquito.I = y.y[6, :]
+    human.S = y.y[0, :]
+    human.E = y.y[1, :]
+    human.I = y.y[2, :]
+    human.R = y.y[3, :]
+    mosquito.S = y.y[4, :]
+    mosquito.E = y.y[5, :]
+    mosquito.I = y.y[6, :]
 
     # Calculate the prevalence based on the ODE solution times
-    calc_prevalence(t, Human.E, Human.I, Human)
-    calc_prevalence(t, Mosquito.E, Mosquito.I, Mosquito)
-    
+    calc_prevalence(t, human.E, human.I, human)
+    calc_prevalence(t, mosquito.E, mosquito.I, mosquito)
+
     # Plot the results
-    makeplots(t, Human.S, Human.E, Human.I, Human.R)
-    makeplots(t, Mosquito.S, Mosquito.E, Mosquito.I)
+    makeplots(t, human.S, human.E, human.I, human.R)
+    makeplots(t, mosquito.S, mosquito.E, mosquito.I)
 
-    plt.plot(t, Human.E + Human.I, label='Human Prev')
-    plt.plot(t, Human.PREV, label='Human Prev')
-    plt.plot(t, Mosquito.PREV, label='Mosquito Prev')
+    plt.plot(t, human.E + human.I, label='Human Prev')
+    plt.plot(t, human.PREV, label='Human Prev')
+    plt.plot(t, mosquito.PREV, label='Mosquito Prev')
+    plt.title("Prevalence of Infection")
+    plt.grid()
     plt.legend()
     plt.show()
+    
 
-
-    plt.plot(Human.S, Human.I, lw=2, label='s, i trajectory')
-    plt.plot([1/R0, 1/R0], [0, 1], '--', lw=2, label='di/dt = 0')
-    plt.plot(Human.S[0], Human.I[0], '.', ms=20, label='Initial Condition')
-    plt.plot(Human.S[-1], Human.I[-1], '.', ms=20, label='Final Condition')
-    plt.title('State Trajectory')
-    plt.ylim(0, 1.05)
-    plt.xlim(0, 1.05)
-    plt.ylabel('Infectious')
-    plt.xlabel('Susceptible')
-    plt.legend()
-    plt.show()
-
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
+
