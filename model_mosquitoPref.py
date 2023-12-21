@@ -1,6 +1,9 @@
 '''
 Malaria SEIR mdoel for PHCP project
-Parameters based primarily off of Tanzania
+Parameters based primarily off of Tanzania.
+
+Mosquito preference modeled in as OMEGA, 
+the preference of infectious humans by mosquitos
 
 @author: Matthew Martinez
 '''
@@ -18,9 +21,9 @@ START = 0
 STOP = 10000
 
 DO_SIMULATION = True
-PARAM_TO_SIMULATE = "a"
-SIM_START = 20
-SIM_END = 100
+PARAM_TO_SIMULATE = "OMEGA"
+SIM_START = 0.003
+SIM_END = 1
 SIM_INCREMENTS = 10
 
 ### PARAMETERS ###
@@ -38,6 +41,7 @@ PARAMETERS = {
     "Mosquito": {
         "TotalPop": 119_200_000,
         "a": 70,
+        "OMEGA": 1,
         "MU": 0.35,
         "PI": 0.01,
         "EPSILON": 7/9
@@ -110,7 +114,7 @@ def f(t: float, y: list, *args) -> list:
                         * (Mosquito.I / Mosquito.Total)
                         * Human.PI)
 
-    Mosquito.LAMBDA = (Mosquito.a * ((Human.I / Human.Total)) * Mosquito.PI)  # Force of infection in Mosquito
+    Mosquito.LAMBDA = (Mosquito.a * (Mosquito.OMEGA * (Human.I / Human.Total)) * Mosquito.PI)  # Force of infection in Mosquito
 
     # Differential equations
     Human.dS = ((Human.MU * Human.Total)
@@ -228,7 +232,7 @@ def simulate(Obj: Agent,
 
         simulations["R0"].append(
             math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
+                    * (mosquito.OMEGA * mosquito.a * human.PI) * (1 / mosquito.MU)) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
                     * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
@@ -266,7 +270,7 @@ def main():
 
     # Define and solve for the basic reproductive ratio, R0
     R0 = math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
+                    * (mosquito.OMEGA * mosquito.a * human.PI) * (1 / mosquito.MU)) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
                     * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
@@ -303,7 +307,9 @@ if __name__ == "__main__":
     if DO_SIMULATION:
         human = Agent.from_kwargs(**PARAMETERS["Human"])
         mosquito = Agent.from_kwargs(**PARAMETERS["Mosquito"])
-        simulate(mosquito, PARAM_TO_SIMULATE, SIM_START, SIM_END, SIM_INCREMENTS, *(human, mosquito))
+        simulate(mosquito, PARAM_TO_SIMULATE, 
+                 SIM_START, SIM_END, SIM_INCREMENTS, 
+                 *(human, mosquito))
     else:
         main()
 
