@@ -1,6 +1,9 @@
 '''
 Malaria SEIR mdoel for PHCP project
-Parameters based primarily off of Tanzania
+Parameters based primarily off of Tanzania.
+
+Mosquito preference modeled in as OMEGA, 
+the preference of infectious humans by mosquitos
 
 @author: Matthew Martinez
 '''
@@ -15,12 +18,12 @@ from typing import Optional
 
 ### Globals ###
 START = 0
-STOP = 400
+STOP = 2000
 
-DO_SIMULATION = False
-PARAM_TO_SIMULATE = "a"
-SIM_START = 1
-SIM_END = 100
+DO_SIMULATION = True
+PARAM_TO_SIMULATE = "INSECTICIDE"
+SIM_START = 0.99
+SIM_END = 0.99999
 SIM_INCREMENTS = 10
 
 ### PARAMETERS ###
@@ -38,11 +41,16 @@ PARAMETERS = {
     "Mosquito": {
         "TotalPop": 119_200_000,
         "a": 70,
+        "OMEGA": 2,
         "MU": 0.35,
         "PI": 0.01,
-        "EPSILON": 7/9
+        "EPSILON": 7/9,
+        "THETA": 0.2,  # 0.05
+        "INSECTICIDE": 0.8,
     }
 }
+
+PARAMETERS["Mosquito"]["TAU"] = (-math.log(1-PARAMETERS["Mosquito"]["INSECTICIDE"])) * 7
 
 
 @dataclass
@@ -110,7 +118,7 @@ def f(t: float, y: list, *args) -> list:
                         * (Mosquito.I / Mosquito.Total)
                         * Human.PI)
 
-    Mosquito.LAMBDA = (Mosquito.a * ((Human.I / Human.Total)) * Mosquito.PI)  # Force of infection in Mosquito
+    Mosquito.LAMBDA = (Mosquito.a * (Mosquito.OMEGA * (Human.I / Human.Total)) * Mosquito.PI)  # Force of infection in Mosquito
 
     # Differential equations
     Human.dS = ((Human.MU * Human.Total)
@@ -132,16 +140,20 @@ def f(t: float, y: list, *args) -> list:
                 - (Human.MU * Human.R))
     
 
-    Mosquito.dS = ((Mosquito.MU * Mosquito.Total)
+    Mosquito.dS = ((1 - Mosquito.THETA) * (Mosquito.MU * Mosquito.Total)
+                   + (Mosquito.THETA * Mosquito.TAU * Mosquito.Total)
                    - (Mosquito.LAMBDA * Mosquito.S)
-                   - (Mosquito.MU * Mosquito.S))
+                   - (1 - Mosquito.THETA) * (Mosquito.MU * Mosquito.S)
+                   - (Mosquito.THETA * Mosquito.TAU * Mosquito.S))
     
     Mosquito.dE = ((Mosquito.LAMBDA * Mosquito.S)
-                   - (Mosquito.MU * Mosquito.E)
+                   - (1 - Mosquito.THETA) * (Mosquito.MU * Mosquito.E)
+                   - (Mosquito.THETA * Mosquito.TAU * Mosquito.E)
                    - (Mosquito.EPSILON * Mosquito.E))
     
     Mosquito.dI = ((Mosquito.EPSILON * Mosquito.E)
-                   - (Mosquito.MU * Mosquito.I))
+                   - (1 - Mosquito.THETA) * (Mosquito.MU * Mosquito.I)
+                   - (Mosquito.THETA * Mosquito.TAU * Mosquito.I))
 
     return [Human.dS, Human.dE, Human.dI, Human.dR, 
             Mosquito.dS, Mosquito.dE, Mosquito.dI]
@@ -173,7 +185,7 @@ def makeplots(t: np.ndarray,
     if e is not None: 
         plt.plot(t, e, lw=2, label='Exposed')
     if i is not None: 
-        plt.plot(t, i, lw=2, label='Infectious')
+        plt.plot(t, i, lw=2, label='Infected')
     if r is not None: 
         plt.plot(t, r, lw=2, label='Recovered')
 
@@ -215,6 +227,10 @@ def simulate(Obj: Agent,
         val = begin + (i * inc)
         setattr(Obj, param, val)
 
+        # Special case for the INSECTICIDE parameter
+        if param == "INSECTICIDE":
+            setattr(Obj, "TAU", -math.log(1-mosquito.INSECTICIDE) * 7)
+
         # Solve the ODE
         y = solve_ivp(f, (START, STOP), y0, args=(human, mosquito))
         simulations["y"].append(y)
@@ -227,10 +243,10 @@ def simulate(Obj: Agent,
         mosquito.I = y.y[6, :]
 
         simulations["R0"].append(
-            math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
+            math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU + mosquito.THETA * mosquito.TAU)) 
+                    * (mosquito.a * human.PI) * (1 / (mosquito.MU + mosquito.THETA * mosquito.TAU))) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
-                    * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
+                    * ((mosquito.OMEGA * mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
         )
         
@@ -250,7 +266,6 @@ def simulate(Obj: Agent,
     plt.grid()
     plt.legend()
     plt.show()
-    
 
         
 def main():
@@ -265,13 +280,14 @@ def main():
     y = solve_ivp(f, (START, STOP), y0, args=(human, mosquito))
 
     # Define and solve for the basic reproductive ratio, R0
-    R0 = math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
+    R0 = math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU + mosquito.THETA * mosquito.TAU)) 
+                    * (mosquito.a * human.PI) * (1 / (mosquito.MU + mosquito.THETA * mosquito.TAU))) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
-                    * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
+                    * ((mosquito.OMEGA * mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
     
     print(f"R0: {R0}")
+
 
     # Set the human and mosquito parameters with the ODE results
     t = y.t
@@ -292,8 +308,7 @@ def main():
     makeplots(t, mosquito.S, mosquito.E, mosquito.I)
 
     plt.plot(t, human.PREV, label='Human Prev')
-    #plt.plot(t, mosquito.PREV, label='Mosquito Prev')
-    plt.ylim(0, 1.05)
+    plt.plot(t, mosquito.PREV, label='Mosquito Prev')
     plt.title("Prevalence of Infection")
     plt.grid()
     plt.legend()
@@ -304,7 +319,9 @@ if __name__ == "__main__":
     if DO_SIMULATION:
         human = Agent.from_kwargs(**PARAMETERS["Human"])
         mosquito = Agent.from_kwargs(**PARAMETERS["Mosquito"])
-        simulate(mosquito, PARAM_TO_SIMULATE, SIM_START, SIM_END, SIM_INCREMENTS, *(human, mosquito))
+        simulate(mosquito, PARAM_TO_SIMULATE, 
+                 SIM_START, SIM_END, SIM_INCREMENTS, 
+                 *(human, mosquito))
     else:
         main()
 

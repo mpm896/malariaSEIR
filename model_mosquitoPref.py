@@ -18,12 +18,12 @@ from typing import Optional
 
 ### Globals ###
 START = 0
-STOP = 10000
+STOP = 400
 
 DO_SIMULATION = True
 PARAM_TO_SIMULATE = "OMEGA"
-SIM_START = 0.003
-SIM_END = 1
+SIM_START = 1
+SIM_END = 6
 SIM_INCREMENTS = 10
 
 ### PARAMETERS ###
@@ -73,7 +73,7 @@ class Agent:
     @classmethod
     def from_kwargs(cls, **kwargs) -> Agent:
         """ Set custom parameters from kwargs """
-        ret = cls(0, 0, 0, 0)
+        ret = cls()
 
         # Add kwargs to class
         for k, v in kwargs.items():
@@ -232,9 +232,9 @@ def simulate(Obj: Agent,
 
         simulations["R0"].append(
             math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.OMEGA * mosquito.a * human.PI) * (1 / mosquito.MU)) 
+                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
-                    * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
+                    * ((mosquito.OMEGA * mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
         )
         
@@ -270,9 +270,9 @@ def main():
 
     # Define and solve for the basic reproductive ratio, R0
     R0 = math.sqrt(((mosquito.EPSILON / (mosquito.EPSILON + mosquito.MU)) 
-                    * (mosquito.OMEGA * mosquito.a * human.PI) * (1 / mosquito.MU)) 
+                    * (mosquito.a * human.PI) * (1 / mosquito.MU)) 
                     * ((human.EPSILON / (human.EPSILON + human.MU)) 
-                    * ((mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
+                    * ((mosquito.OMEGA * mosquito.a * mosquito.PI * mosquito.TotalPop) / human.TotalPop) 
                     * (1 / (human.MU + human.DELTA))))
     
     print(f"R0: {R0}")

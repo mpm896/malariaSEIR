@@ -1,0 +1,17 @@
+DESCRIPTION OF PARAMETERS IN THE MODELS
+
+a - number of bites per mosquito per unit of time
+CFR - Case fatality ratio
+DELTA - Per capita rate at which an individual leaves the infectious group, either to recovered or death
+EPSILON - Per capita rate at which an exposed individual becomes infectious
+LAMBDA - Force of infection
+MU - Background birth/death/emigration/imigration rate
+OMEGA - Preference factor at which mosquitos bite infectious individuals over others
+PI - Chance of infection occuring upon an infectious bite
+SIGMA - Per capita rate at which a recovered individual becomes susceptible again (i.e. loss of immunity)
+TAU - Proportion of mosquitos that die upon contact with insecticide
+THETA - Proportion of mosquitos that contact insecticide
+TotalPop - Total population
+
+
+
